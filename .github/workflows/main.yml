@@ -1,0 +1,88 @@
+name: Chrome Remote Desktop (Windows)
+
+on:
+  workflow_dispatch:
+    inputs:
+      CODE:
+        description: "Paste ONLY the 4/... token from https://remotedesktop.google.com/headless"
+        required: true
+      PIN:
+        description: "6+ digit PIN"
+        required: true
+        default: "123456"
+
+jobs:
+  crd:
+    runs-on: windows-2022
+
+    steps:
+      - name: Show system info
+        run: systeminfo
+
+      # Install tools
+      - name: Install 7-Zip, Python, and Go
+        run: |
+          Write-Host "Downloading installers..."
+
+          Invoke-WebRequest "https://www.7-zip.org/a/7z2301-x64.exe" -OutFile "7zip.exe"
+          Invoke-WebRequest "https://www.python.org/ftp/python/3.12.2/python-3.12.2-amd64.exe" -OutFile "python.exe"
+          Invoke-WebRequest "https://go.dev/dl/go1.22.5.windows-amd64.msi" -OutFile "go.msi"
+
+          Write-Host "Installing..."
+
+          Start-Process ".\7zip.exe" -ArgumentList "/S" -Wait
+          Start-Process ".\python.exe" -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1" -Wait
+          Start-Process "msiexec.exe" -ArgumentList "/i go.msi /quiet /norestart" -Wait
+
+      - name: Install Python requests package
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Verify installations
+        run: |
+          python --version
+          pip show requests
+          go version
+
+      # Install Chrome Remote Desktop
+      - name: Download Chrome Remote Desktop Host
+        run: |
+          Invoke-WebRequest `
+            -Uri "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi" `
+            -OutFile "crdhost.msi"
+
+      - name: Install Chrome Remote Desktop Host
+        run: |
+          Start-Process msiexec.exe -ArgumentList '/i crdhost.msi /quiet /norestart' -Wait
+
+      # Register CRD
+      - name: Register Chrome Remote Desktop
+        run: |
+          $token = "${{ github.event.inputs.CODE }}"
+          $pin   = "${{ github.event.inputs.PIN }}"
+
+          $exe = "${env:ProgramFiles(x86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
+
+          & $exe `
+            --code="$token" `
+            --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
+            --name=$env:COMPUTERNAME `
+            --pin="$pin"
+
+      # Keep alive + countdown
+      - name: Keep machine alive with timer (6 hours)
+        run: |
+          Write-Host "Machine ready."
+          Write-Host "Connect at: https://remotedesktop.google.com/access"
+
+          $totalMinutes = 360
+          $interval = 30
+
+          for ($elapsed = 0; $elapsed -lt $totalMinutes; $elapsed += $interval) {
+              $remaining = $totalMinutes - $elapsed
+              Write-Host "Machine time remaining: $remaining minutes"
+              Start-Sleep -Seconds ($interval * 60)
+          }
+
+          Write-Host "Session time completed."
