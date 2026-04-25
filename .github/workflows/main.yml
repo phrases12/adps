@@ -24,7 +24,7 @@ jobs:
         run: |
           Write-Host "Downloading installers..."
 
-          Invoke-WebRequest "https://www.7-zip.org/a/7z2301-x64.exe" -OutFile "7zip.exe"
+          Invoke-WebRequest "https://github.com/ip7z/7zip/releases/download/25.01/7z2501-x64.exe" -OutFile "7zip.exe"
           Invoke-WebRequest "https://www.python.org/ftp/python/3.12.2/python-3.12.2-amd64.exe" -OutFile "python.exe"
           Invoke-WebRequest "https://go.dev/dl/go1.22.5.windows-amd64.msi" -OutFile "go.msi"
 
