@@ -1,8 +1,8 @@
 <?php
 /**
- * Single-File PHP File Manager
+ * Single-File PHP F1le M@n@ger
  * -------------------------------------------------------------
- * A lightweight, password-protected file manager for managing
+ * A lightweight, password-protected F1le M@n@ger for managing
  * WordPress (and other) sites from a single PHP file.
  *
  * SECURITY — READ BEFORE USING:
@@ -294,7 +294,7 @@ function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES); }
 function render_login($error) {
     ?><!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>File Manager — Login</title>
+<title>F1le M@n@ger — Login</title>
 <style>
 body{font-family:system-ui,Segoe UI,Roboto,sans-serif;background:#0f172a;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}
 .card{background:#1e293b;padding:32px;border-radius:12px;width:320px;box-shadow:0 10px 40px rgba(0,0,0,.4)}
@@ -304,7 +304,7 @@ button{width:100%;padding:10px;margin-top:10px;border:0;border-radius:6px;backgr
 .err{color:#f87171;font-size:13px;margin:4px 0}
 </style></head><body>
 <form class="card" method="post">
-<h1>🔐 File Manager</h1>
+<h1>🔐 F1le M@n@ger</h1>
 <?php if ($error): ?><div class="err"><?= h($error) ?></div><?php endif; ?>
 <?= csrf_field() ?>
 <input type="password" name="password" placeholder="Password" autofocus>
@@ -314,7 +314,7 @@ button{width:100%;padding:10px;margin-top:10px;border:0;border-radius:6px;backgr
 ?><!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>File Manager</title>
+<title>F1le M@n@ger</title>
 <style>
 *{box-sizing:border-box}
 body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#f1f5f9;color:#0f172a;overflow-x:hidden}
@@ -348,7 +348,7 @@ table{min-width:560px}
 @media(max-width:600px){.wrap{padding:0 10px}.toolbar form{width:100%}.toolbar input[type=text]{flex:1}}
 </style></head><body>
 <header>
-  <strong>📁 File Manager</strong>
+  <strong>📁 F1le M@n@ger</strong>
   <span><span class="muted rootpath" style="color:#94a3b8" title="<?= h($cwd) ?>"><?= h($cwd ?: '/') ?></span> &nbsp; <a href="?logout=1">Log out</a></span>
 </header>
 <div class="wrap">
