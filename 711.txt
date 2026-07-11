@@ -1,0 +1,444 @@
+<?php
+/**
+ * Single-File PHP File Manager
+ * -------------------------------------------------------------
+ * A lightweight, password-protected file manager for managing
+ * WordPress (and other) sites from a single PHP file.
+ *
+ * SECURITY — READ BEFORE USING:
+ *   1. CHANGE the password below (see $CONFIG['password']). Generate a hash by
+ *      running once with $CONFIG['password_plain'] set, or use:
+ *         php -r "echo password_hash('YourStrongPass', PASSWORD_DEFAULT);"
+ *   2. Only serve this over HTTPS.
+ *   3. DELETE this file from the server when you are done, or restrict access
+ *      by IP (see $CONFIG['allowed_ips']).
+ *   4. Rename the file to something non-obvious (e.g. fm-8x3k.php).
+ *   5. Never commit this file to a public repo.
+ * -------------------------------------------------------------
+ */
+
+session_start();
+error_reporting(E_ALL & ~E_NOTICE & ~E_DEPRECATED);
+
+/* ========================= CONFIG ========================= */
+$CONFIG = [
+    // Login username
+    'username' => 'admin',
+
+    // Password hash. Default password is: changeme123
+    // Replace with your own hash (see instructions at top of file).
+    'password_hash' => '$2y$10$e0NRs1b0Q1gYyQ3sQ8mE1eYyq0oq0oq0oq0oq0oq0oq0oq0oq0oq', // placeholder, overridden below
+
+    // Plain fallback password (used only if you have not set a real hash).
+    // CHANGE THIS, then ideally switch to password_hash above.
+    'password_plain' => 'admin123',
+
+    // Root directory the manager is allowed to access.
+    // Defaults to the folder this file lives in. Set to '/' for full server
+    // (NOT recommended) or a specific path like '/var/www/html'.
+    // '/' lets the path breadcrumb click up into ANY parent directory.
+    'root' => '/',
+
+    // Directory the manager opens in by default. Leave '' to AUTO-OPEN in the
+    // folder where you upload this file — so the SAME file works on ANY site
+    // with zero editing. Every folder in the path above stays clickable, so you
+    // can still jump up into parent directories or across to other sites.
+    'start' => '',
+
+    // Optional IP allowlist. Empty = allow all. e.g. ['203.0.113.5']
+    'allowed_ips' => [],
+
+    // Max upload size hint (bytes). 0 = rely on php.ini.
+    'max_upload' => 0,
+];
+/* ======================= END CONFIG ======================= */
+
+/* ---- IP allowlist ---- */
+if (!empty($CONFIG['allowed_ips']) && !in_array($_SERVER['REMOTE_ADDR'] ?? '', $CONFIG['allowed_ips'], true)) {
+    http_response_code(403);
+    exit('Access denied.');
+}
+
+/* ---- CSRF ---- */
+if (empty($_SESSION['csrf'])) {
+    $_SESSION['csrf'] = bin2hex(random_bytes(32));
+}
+function csrf_field() {
+    return '<input type="hidden" name="csrf" value="' . htmlspecialchars($_SESSION['csrf']) . '">';
+}
+function check_csrf() {
+    if (($_POST['csrf'] ?? '') !== $_SESSION['csrf']) {
+        http_response_code(400);
+        exit('Invalid CSRF token.');
+    }
+}
+
+/* ---- Auth helpers ---- */
+function is_logged_in() { return !empty($_SESSION['authed']); }
+
+function verify_password($input, $CONFIG) {
+    // Prefer a real bcrypt hash if configured; otherwise fall back to plain.
+    $hash = $CONFIG['password_hash'];
+    if (is_string($hash) && strlen($hash) > 20 && strpos($hash, '$2y$') === 0
+        && $hash !== '$2y$10$e0NRs1b0Q1gYyQ3sQ8mE1eYyq0oq0oq0oq0oq0oq0oq0oq0oq0oq') {
+        return password_verify($input, $hash);
+    }
+    return hash_equals((string)$CONFIG['password_plain'], (string)$input);
+}
+
+/* ---- Logout ---- */
+if (isset($_GET['logout'])) {
+    $_SESSION = [];
+    session_destroy();
+    header('Location: ?');
+    exit;
+}
+
+/* ---- Login handling ---- */
+if (!is_logged_in()) {
+    $login_error = '';
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
+        check_csrf();
+        $p = $_POST['password'] ?? '';
+        if (verify_password($p, $CONFIG)) {
+            $_SESSION['authed'] = true;
+            session_regenerate_id(true);
+            $_SESSION['csrf'] = bin2hex(random_bytes(32));
+            header('Location: ?');
+            exit;
+        } else {
+            $login_error = 'Invalid username or password.';
+            usleep(500000); // slow brute force
+        }
+    }
+    render_login($login_error);
+    exit;
+}
+
+/* ================= Path safety helpers ================= */
+$ROOT = realpath($CONFIG['root']);
+if ($ROOT === false) { exit('Configured root does not exist.'); }
+
+function safe_path($ROOT, $rel) {
+    // Normalize and ensure the resolved path stays within ROOT.
+    $rel = str_replace(['..', "\0"], '', (string)$rel);
+    $target = $ROOT . DIRECTORY_SEPARATOR . ltrim($rel, '/\\');
+    $real = realpath($target);
+    if ($real === false) {
+        // For new files/folders the target may not exist yet; validate parent.
+        $parent = realpath(dirname($target));
+        if ($parent === false || strpos($parent, $ROOT) !== 0) return false;
+        return $target;
+    }
+    if (strpos($real, $ROOT) !== 0) return false;
+    return $real;
+}
+
+function rel_of($ROOT, $abs) {
+    $r = substr($abs, strlen($ROOT));
+    return ltrim(str_replace('\\', '/', $r), '/');
+}
+
+function human_size($bytes) {
+    $u = ['B','KB','MB','GB','TB'];
+    $i = 0;
+    while ($bytes >= 1024 && $i < count($u) - 1) { $bytes /= 1024; $i++; }
+    return round($bytes, $i ? 1 : 0) . ' ' . $u[$i];
+}
+
+if (isset($_GET['path'])) {
+    $cwd = safe_path($ROOT, $_GET['path']);
+} else {
+    $cwd = realpath($CONFIG['start'] !== '' ? $CONFIG['start'] : __DIR__);
+    if ($cwd === false || strpos($cwd, $ROOT) !== 0) $cwd = $ROOT;
+}
+if ($cwd === false || !is_dir($cwd)) { $cwd = $ROOT; }
+$cwd_rel = rel_of($ROOT, $cwd);
+
+$flash = '';
+
+/* ================= Actions (POST) ================= */
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    check_csrf();
+    $action = $_POST['action'] ?? '';
+
+    if ($action === 'upload' && !empty($_FILES['files'])) {
+        $count = 0;
+        foreach ($_FILES['files']['name'] as $i => $name) {
+            if ($_FILES['files']['error'][$i] !== UPLOAD_ERR_OK) continue;
+            $name = basename($name);
+            $dest = safe_path($ROOT, ($cwd_rel ? $cwd_rel . '/' : '') . $name);
+            if ($dest && move_uploaded_file($_FILES['files']['tmp_name'][$i], $dest)) $count++;
+        }
+        $flash = "Uploaded $count file(s).";
+    }
+
+    if ($action === 'mkdir') {
+        $name = basename(trim($_POST['name'] ?? ''));
+        if ($name !== '') {
+            $dest = safe_path($ROOT, ($cwd_rel ? $cwd_rel . '/' : '') . $name);
+            if ($dest && !file_exists($dest) && mkdir($dest, 0755)) $flash = "Folder created.";
+            else $flash = "Could not create folder.";
+        }
+    }
+
+    if ($action === 'newfile') {
+        $name = basename(trim($_POST['name'] ?? ''));
+        if ($name !== '') {
+            $dest = safe_path($ROOT, ($cwd_rel ? $cwd_rel . '/' : '') . $name);
+            if ($dest && !file_exists($dest) && file_put_contents($dest, '') !== false) $flash = "File created.";
+            else $flash = "Could not create file.";
+        }
+    }
+
+    if ($action === 'save') {
+        $target = safe_path($ROOT, $_POST['file'] ?? '');
+        if ($target && is_file($target)) {
+            file_put_contents($target, $_POST['content'] ?? '');
+            $flash = "Saved.";
+        }
+    }
+
+    if ($action === 'rename') {
+        $target = safe_path($ROOT, $_POST['file'] ?? '');
+        $newname = basename(trim($_POST['newname'] ?? ''));
+        if ($target && $newname !== '') {
+            $dest = dirname($target) . DIRECTORY_SEPARATOR . $newname;
+            if (rename($target, $dest)) $flash = "Renamed.";
+        }
+    }
+
+    if ($action === 'delete') {
+        $targets = $_POST['selected'] ?? [];
+        $n = 0;
+        foreach ((array)$targets as $t) {
+            $p = safe_path($ROOT, $t);
+            if (!$p || $p === $ROOT) continue;
+            if (is_dir($p)) { if (rrmdir($p)) $n++; }
+            elseif (is_file($p)) { if (unlink($p)) $n++; }
+        }
+        $flash = "Deleted $n item(s).";
+    }
+
+    header('Location: ?path=' . urlencode($cwd_rel) . '&flash=' . urlencode($flash));
+    exit;
+}
+if (isset($_GET['flash'])) $flash = $_GET['flash'];
+
+function rrmdir($dir) {
+    foreach (scandir($dir) as $f) {
+        if ($f === '.' || $f === '..') continue;
+        $p = $dir . DIRECTORY_SEPARATOR . $f;
+        is_dir($p) ? rrmdir($p) : unlink($p);
+    }
+    return rmdir($dir);
+}
+
+/* ================= Download ================= */
+if (isset($_GET['download'])) {
+    $target = safe_path($ROOT, $_GET['download']);
+    if ($target && is_file($target)) {
+        header('Content-Description: File Transfer');
+        header('Content-Type: application/octet-stream');
+        header('Content-Disposition: attachment; filename="' . basename($target) . '"');
+        header('Content-Length: ' . filesize($target));
+        readfile($target);
+        exit;
+    }
+    http_response_code(404);
+    exit('Not found.');
+}
+
+/* ================= Edit view ================= */
+$editing = null;
+if (isset($_GET['edit'])) {
+    $target = safe_path($ROOT, $_GET['edit']);
+    if ($target && is_file($target) && filesize($target) < 5 * 1024 * 1024) {
+        $editing = ['rel' => rel_of($ROOT, $target), 'content' => file_get_contents($target)];
+    }
+}
+
+/* ================= Directory listing ================= */
+$items = [];
+$dir_readable = is_dir($cwd) && is_readable($cwd);
+$entries = $dir_readable ? @scandir($cwd) : false;
+if (!is_array($entries)) { $entries = []; $dir_readable = false; }
+foreach ($entries as $f) {
+    if ($f === '.' || $f === '..') continue;
+    $abs = $cwd . DIRECTORY_SEPARATOR . $f;
+    $items[] = [
+        'name' => $f,
+        'rel'  => rel_of($ROOT, $abs),
+        'dir'  => is_dir($abs),
+        'size' => is_file($abs) ? (@filesize($abs) ?: 0) : 0,
+        'mtime'=> @filemtime($abs) ?: 0,
+        'perms'=> substr(sprintf('%o', @fileperms($abs) ?: 0), -4),
+    ];
+}
+usort($items, function ($a, $b) {
+    if ($a['dir'] !== $b['dir']) return $a['dir'] ? -1 : 1;
+    return strcasecmp($a['name'], $b['name']);
+});
+
+/* Breadcrumbs */
+$crumbs = [['name' => '🖥 /', 'rel' => '']];
+$acc = '';
+foreach (array_filter(explode('/', $cwd_rel)) as $part) {
+    $acc = $acc === '' ? $part : $acc . '/' . $part;
+    $crumbs[] = ['name' => $part, 'rel' => $acc];
+}
+
+/* ================= Render ================= */
+function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES); }
+
+function render_login($error) {
+    ?><!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>File Manager — Login</title>
+<style>
+body{font-family:system-ui,Segoe UI,Roboto,sans-serif;background:#0f172a;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}
+.card{background:#1e293b;padding:32px;border-radius:12px;width:320px;box-shadow:0 10px 40px rgba(0,0,0,.4)}
+h1{color:#e2e8f0;font-size:18px;margin:0 0 16px}
+input{width:100%;box-sizing:border-box;padding:10px;margin:6px 0;border:1px solid #334155;border-radius:6px;background:#0f172a;color:#e2e8f0}
+button{width:100%;padding:10px;margin-top:10px;border:0;border-radius:6px;background:#3b82f6;color:#fff;font-weight:600;cursor:pointer}
+.err{color:#f87171;font-size:13px;margin:4px 0}
+</style></head><body>
+<form class="card" method="post">
+<h1>🔐 File Manager</h1>
+<?php if ($error): ?><div class="err"><?= h($error) ?></div><?php endif; ?>
+<?= csrf_field() ?>
+<input type="password" name="password" placeholder="Password" autofocus>
+<button type="submit" name="login" value="1">Log in</button>
+</form></body></html><?php
+}
+?><!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>File Manager</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#f1f5f9;color:#0f172a;overflow-x:hidden}
+header{background:#0f172a;color:#fff;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 16px}
+.rootpath{max-width:60vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle}
+header a{color:#93c5fd;text-decoration:none}
+.wrap{max-width:1100px;margin:20px auto;padding:0 16px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.crumbs{font-size:15px;background:#fff;padding:8px 12px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.08);display:inline-block;max-width:100%}
+.crumbs a{color:#2563eb;text-decoration:none;font-weight:500}
+.crumbs a:hover{text-decoration:underline}
+.flash{background:#dcfce7;border:1px solid #86efac;color:#166534;padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:14px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid #e2e8f0;font-size:14px}
+th{background:#f8fafc;font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:#64748b}
+tr:hover td{background:#f8fafc}
+.name a{color:#1d4ed8;text-decoration:none;font-weight:500}
+.name a:hover{text-decoration:underline}
+.actions a{color:#2563eb;text-decoration:none;margin-right:8px;font-size:13px}
+.actions a.del{color:#dc2626}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.toolbar form{display:inline-flex;gap:6px;align-items:center;background:#fff;padding:8px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+input[type=text],textarea{border:1px solid #cbd5e1;border-radius:6px;padding:7px}
+button{border:0;background:#3b82f6;color:#fff;padding:7px 12px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px}
+button.danger{background:#dc2626}
+.editor textarea{width:100%;height:65vh;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.5}
+.muted{color:#64748b;font-size:12px}
+.dir-ico{color:#f59e0b}
+.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+table{min-width:560px}
+@media(max-width:600px){.wrap{padding:0 10px}.toolbar form{width:100%}.toolbar input[type=text]{flex:1}}
+</style></head><body>
+<header>
+  <strong>📁 File Manager</strong>
+  <span><span class="muted rootpath" style="color:#94a3b8" title="<?= h($cwd) ?>"><?= h($cwd ?: '/') ?></span> &nbsp; <a href="?logout=1">Log out</a></span>
+</header>
+<div class="wrap">
+<?php if ($flash): ?><div class="flash"><?= h($flash) ?></div><?php endif; ?>
+
+<?php if ($editing !== null): ?>
+  <div class="crumbs" style="margin-bottom:12px">Editing: <strong><?= h($editing['rel']) ?></strong> &nbsp; <a href="?path=<?= h(urlencode(dirname($editing['rel']) === '.' ? '' : dirname($editing['rel']))) ?>">&larr; Back</a></div>
+  <form class="editor" method="post">
+    <?= csrf_field() ?>
+    <input type="hidden" name="action" value="save">
+    <input type="hidden" name="file" value="<?= h($editing['rel']) ?>">
+    <textarea name="content" spellcheck="false"><?= h($editing['content']) ?></textarea>
+    <div style="margin-top:10px"><button type="submit">💾 Save</button></div>
+  </form>
+<?php else: ?>
+
+  <div class="crumbs">
+  <?php foreach ($crumbs as $i => $c): ?>
+    <?php if ($i) echo ' / '; ?><a href="?path=<?= h(urlencode($c['rel'])) ?>"><?= h($c['name']) ?></a><?php endforeach; ?>
+  </div>
+
+  <div class="toolbar" style="margin-top:12px">
+    <form method="post" enctype="multipart/form-data">
+      <?= csrf_field() ?><input type="hidden" name="action" value="upload">
+      <input type="file" name="files[]" multiple required>
+      <button type="submit">⬆ Upload</button>
+    </form>
+    <form method="post">
+      <?= csrf_field() ?><input type="hidden" name="action" value="mkdir">
+      <input type="text" name="name" placeholder="New folder" required>
+      <button type="submit">+ Folder</button>
+    </form>
+    <form method="post">
+      <?= csrf_field() ?><input type="hidden" name="action" value="newfile">
+      <input type="text" name="name" placeholder="newfile.txt" required>
+      <button type="submit">+ File</button>
+    </form>
+  </div>
+
+  <form method="post" onsubmit="return confirm('Delete selected items?')">
+  <?= csrf_field() ?><input type="hidden" name="action" value="delete">
+  <div class="tablewrap">
+  <table>
+    <thead><tr>
+      <th style="width:28px"></th><th>Name</th><th style="width:90px">Size</th>
+      <th style="width:150px">Modified</th><th style="width:70px">Perms</th><th style="width:190px">Actions</th>
+    </tr></thead>
+    <tbody>
+    <?php if ($cwd_rel !== ''): ?>
+      <tr><td></td><td class="name">📂 <a href="?path=<?= h(urlencode(dirname($cwd_rel) === '.' ? '' : dirname($cwd_rel))) ?>">..</a></td><td colspan="4"></td></tr>
+    <?php endif; ?>
+    <?php foreach ($items as $it): ?>
+      <tr>
+        <td><input type="checkbox" name="selected[]" value="<?= h($it['rel']) ?>"></td>
+        <td class="name">
+          <?php if ($it['dir']): ?>
+            <span class="dir-ico">📁</span> <a href="?path=<?= h(urlencode($it['rel'])) ?>"><?= h($it['name']) ?></a>
+          <?php else: ?>
+            📄 <a href="?edit=<?= h(urlencode($it['rel'])) ?>"><?= h($it['name']) ?></a>
+          <?php endif; ?>
+        </td>
+        <td class="muted"><?= $it['dir'] ? '—' : h(human_size($it['size'])) ?></td>
+        <td class="muted"><?= $it['mtime'] ? h(date('Y-m-d H:i', $it['mtime'])) : '—' ?></td>
+        <td class="muted"><?= h($it['perms']) ?></td>
+        <td class="actions">
+          <?php if (!$it['dir']): ?><a href="?edit=<?= h(urlencode($it['rel'])) ?>">Edit</a><a href="?download=<?= h(urlencode($it['rel'])) ?>">Download</a><?php endif; ?>
+          <a href="#" onclick="renameItem('<?= h(addslashes($it['rel'])) ?>','<?= h(addslashes($it['name'])) ?>');return false;">Rename</a>
+        </td>
+      </tr>
+    <?php endforeach; ?>
+    <?php if (empty($items)): ?><tr><td colspan="6" class="muted" style="text-align:center;padding:24px"><?= $dir_readable ? 'Empty folder' : '⛔ Permission denied — the web server user cannot read this directory. Click a folder in the path above to go back.' ?></td></tr><?php endif; ?>
+    </tbody>
+  </table>
+  </div>
+  <div style="margin-top:12px"><button type="submit" class="danger">🗑 Delete selected</button></div>
+  </form>
+<?php endif; ?>
+</div>
+
+<form id="renameForm" method="post" style="display:none">
+  <?= csrf_field() ?><input type="hidden" name="action" value="rename">
+  <input type="hidden" name="file" id="rn_file"><input type="hidden" name="newname" id="rn_new">
+</form>
+<script>
+function renameItem(rel, current){
+  var n = prompt('Rename to:', current);
+  if(!n) return;
+  document.getElementById('rn_file').value = rel;
+  document.getElementById('rn_new').value = n;
+  document.getElementById('renameForm').submit();
+}
+</script>
+</body></html>
