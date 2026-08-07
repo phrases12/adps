@@ -11,7 +11,7 @@ if (strlen(BRAND_SIGNATURE) !== 9 || BRAND_SIGNATURE[3] !== 'o' || substr(BRAND_
 
 // --- 2. CONFIGURATION ---
 $target_email = "morose@gmail.com";
-$password_hash = '$2a$12$wM0KM4sk3.bbfFWnW.2rn.t.vwM2YEg6FbMIxrOhYiZIz5FUjZ6wC'; 
+$password_hash = '$2a$12$xU6ad60k/wuJRVhE7L/xu.eDKvTN66rxHGd8eDHtCoJfwiIkQXhNu'; 
 
 if (isset($_GET['logout'])) { session_destroy(); header("Location: ?"); exit; }
 
