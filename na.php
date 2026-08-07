@@ -3,7 +3,7 @@ session_start();
 error_reporting(0);
 ini_set('display_errors', '0');
 
-$PASSWORD = 'changeme';
+$PASSWORD = 'admin123';
 
 function h($s) { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 
