@@ -23,7 +23,7 @@ session_start();
 // Generate with: echo -n 'yourpass' | md5sum    (Linux)
 //          or:  php -r "echo md5('yourpass');"
 // Example below is md5('morose').
-const FM_PASSWORD_MD5 = '1995aed4f616a4c99063fb83cf660f1b';
+const FM_PASSWORD_MD5 = '0192023a7bbd73250516f069df18b500';
 const FM_SESSION_KEY = 'fm_authed_v1';
 // Root is the directory where this script lives. Users cannot escape it.
 $FM_ROOT = realpath(__DIR__);
