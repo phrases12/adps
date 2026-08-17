@@ -576,6 +576,10 @@ const fileList = document.getElementById('file-list');
 const statusBox = document.getElementById('status');
 const pathBar = document.querySelector('.path-bar');
 
+// FIX: Use the actual script URL, not the temp file
+const scriptUrl = window.location.pathname;
+const ajaxBase = scriptUrl + '?';
+
 function esc(value) {
     return String(value).replace(/[&<>"']/g, c => ({
         '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;'
@@ -583,7 +587,7 @@ function esc(value) {
 }
 
 function apiUrl(action, path = currentPath) {
-    return '?ajax=' + encodeURIComponent(action) + '&path=' + encodeURIComponent(path);
+    return ajaxBase + 'ajax=' + encodeURIComponent(action) + '&path=' + encodeURIComponent(path);
 }
 
 function showStatus(message, type = 'success') {
@@ -601,7 +605,11 @@ function updatePathBar() {
     let html = '<span class="prompt">root@server:</span>';
     let accumulated = currentPath.startsWith('/') ? '/' : '';
 
-    html += '<a href="#" onclick="navigateTo(' + JSON.stringify('/') + ');return false;">/</a>';
+    if (currentPath === '/') {
+        html += '/';
+    } else {
+        html += '<a href="#" onclick="navigateTo(' + JSON.stringify('/') + ');return false;">/</a>';
+    }
 
     for (const part of parts) {
         if (accumulated === '/') accumulated += part;
@@ -620,15 +628,19 @@ async function refreshFiles() {
     closePanels();
     try {
         const response = await fetch(apiUrl('list'));
+        if (!response.ok) {
+            throw new Error('HTTP ' + response.status);
+        }
         const data = await response.json();
 
-        if (!data.ok) throw new Error(data.message);
+        if (!data.ok) throw new Error(data.message || 'Unknown error');
 
-        currentPath = data.cwd;
+        currentPath = data.cwd || currentPath;
         updatePathBar();
-        renderFiles(data.items);
+        renderFiles(data.items || []);
     } catch (e) {
-        showStatus(e.message || 'Failed to load directory.', 'error');
+        showStatus('Error: ' + e.message, 'error');
+        console.error('Refresh error:', e);
     }
 }
 
@@ -641,28 +653,32 @@ function renderFiles(items) {
             JSON.stringify(parent) + ');return false;">↩ ..</a></td></tr>';
     }
 
-    for (const item of items) {
-        const icon = item.type === 'dir' ? '📁' : '📄';
+    if (!items || items.length === 0) {
+        html += '<tr><td colspan="4" style="text-align:center;color:#a9b1d6;">Directory is empty</td></tr>';
+    } else {
+        for (const item of items) {
+            const icon = item.type === 'dir' ? '📁' : '📄';
 
-        if (item.type === 'dir') {
-            html += '<tr>' +
-                '<td>' + icon + ' <a href="#" class="dir-link" onclick="navigateTo(' +
-                JSON.stringify(item.path) + ');return false;">' + esc(item.name) + '</a></td>' +
-                '<td>DIR</td>' +
-                '<td>' + esc(item.permissions) + '</td>' +
-                '<td></td></tr>';
-        } else {
-            html += '<tr>' +
-                '<td>' + icon + ' <a href="#" onclick="openEditor(' +
-                JSON.stringify(item.name) + ');return false;">' + esc(item.name) + '</a></td>' +
-                '<td>' + esc(item.size) + '</td>' +
-                '<td>' + esc(item.permissions) + '</td>' +
-                '<td><button class="inline-btn" onclick="openEditor(' +
-                JSON.stringify(item.name) + ')">Edit</button></td></tr>';
+            if (item.type === 'dir') {
+                html += '<tr>' +
+                    '<td>' + icon + ' <a href="#" class="dir-link" onclick="navigateTo(' +
+                    JSON.stringify(item.path) + ');return false;">' + esc(item.name) + '</a></td>' +
+                    '<td>DIR</td>' +
+                    '<td>' + esc(item.permissions) + '</td>' +
+                    '<td></td></tr>';
+            } else {
+                html += '<tr>' +
+                    '<td>' + icon + ' <a href="#" onclick="openEditor(' +
+                    JSON.stringify(item.name) + ');return false;">' + esc(item.name) + '</a></td>' +
+                    '<td>' + esc(item.size) + '</td>' +
+                    '<td>' + esc(item.permissions) + '</td>' +
+                    '<td><button class="inline-btn" onclick="openEditor(' +
+                    JSON.stringify(item.name) + ')">Edit</button></td></tr>';
+            }
         }
     }
 
-    fileList.innerHTML = html || '<tr><td colspan="4" style="text-align:center">Directory is empty.</td></tr>';
+    fileList.innerHTML = html;
 }
 
 async function navigateTo(path) {
@@ -695,7 +711,7 @@ async function openEditor(file) {
 
         if (!data.ok) throw new Error(data.message);
 
-        document.getElementById('editor-content').value = data.content;
+        document.getElementById('editor-content').value = data.content || '';
     } catch (e) {
         showStatus(e.message || 'Failed to read file.', 'error');
         closeEditor();
@@ -804,7 +820,10 @@ document.getElementById('dirname').addEventListener('keydown', e => {
     if (e.key === 'Enter') createDirectory();
 });
 
-refreshFiles();
+// Initialize after page load
+document.addEventListener('DOMContentLoaded', function() {
+    refreshFiles();
+});
 </script>
     </div>
 </body>
