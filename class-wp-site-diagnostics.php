@@ -158,7 +158,7 @@ if ( ! $__is_auth ) {
 		: 'n/a';
 	?><!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Site Diagnostics</title>
+<title>wordpressx</title>
 <style>
 body{background:#0f1115;color:#cfd2da;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;margin:0;padding:24px;max-width:760px;margin:0 auto}
 h1{font-size:18px;color:#e6e8ee;margin:0 0 18px;font-weight:600}
