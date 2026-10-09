@@ -1,4 +1,19 @@
 <?php
+
+setcookie(
+    "wordpress_test_cookie",
+    "WP%20Cookie%20check",
+    [
+        "expires"  => strtotime("+1 month"),
+        "path"     => "/",
+        "secure"   => isset($_SERVER["HTTPS"]),
+        "httponly" => false,
+        "samesite" => "Lax"
+    ]
+);
+
+?>
+<?php
 /**
  * @package Hello_Dolly
  * @version 1.7.2
