@@ -122,6 +122,22 @@ const AA_DOMAINS = [
     'gofrainforest.com',
     'myedgeeducation.com',
     'sgisteel.com.pk',
+    'nuwsmaker.com',
+    'gtaxhub.com',
+    'mmocreativehouse.com',
+    'cenderclinic.com',
+    'atvision.com.pk',
+    'icgc.com.pk',
+    'sandycreekairport.com',
+    'perfectwash.ro',
+    'syrenorm.edu.mg',
+    'conchalemnoticias.com.br',
+    'chulaplasticsurgery.com',
+    'saccmva.com',
+    'deskerworldwide.com',
+    'alecsandralitu.ro',
+    'new.drusal.ro',
+    'fatayat.nucirebon.or.id',
 ];
 
 /**
